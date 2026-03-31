@@ -1,5 +1,9 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+const rawUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Normalize: remove trailing slash, then ensure it ends with /api
+const cleanUrl = rawUrl.replace(/\/$/, "");
+const API_URL = cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || cleanUrl.replace('/api', '') || 'http://localhost:5000';
 
 export const api = {
     get: async (endpoint: string) => {
