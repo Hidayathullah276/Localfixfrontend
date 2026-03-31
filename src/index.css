@@ -1,0 +1,170 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Space+Grotesk:wght@300..700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 230 25% 97%;
+    --foreground: 230 25% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 230 25% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 230 25% 10%;
+
+    --primary: 245 58% 51%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 175 60% 40%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 230 20% 93%;
+    --muted-foreground: 230 10% 45%;
+
+    --accent: 280 55% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 230 15% 88%;
+    --input: 230 15% 88%;
+    --ring: 245 58% 51%;
+
+    --radius: 0.75rem;
+
+    --gradient-primary: linear-gradient(135deg, hsl(245, 58%, 51%), hsl(280, 55%, 55%));
+    --gradient-secondary: linear-gradient(135deg, hsl(175, 60%, 40%), hsl(210, 70%, 50%));
+    --gradient-hero: linear-gradient(135deg, hsla(245, 58%, 51%, 0.85), hsla(280, 55%, 55%, 0.85));
+    --gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.05));
+
+    --shadow-card: 0 4px 24px -4px rgba(80, 60, 160, 0.1);
+    --shadow-card-hover: 0 12px 40px -8px rgba(80, 60, 160, 0.18);
+    --shadow-glow: 0 0 40px -10px rgba(100, 80, 200, 0.3);
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'DM Sans', sans-serif;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 245 58% 51%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 245 58% 51%;
+  }
+
+  .dark {
+    --background: 230 25% 8%;
+    --foreground: 230 15% 92%;
+    --card: 230 25% 12%;
+    --card-foreground: 230 15% 92%;
+    --popover: 230 25% 12%;
+    --popover-foreground: 230 15% 92%;
+    --primary: 245 58% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 175 60% 45%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 230 20% 18%;
+    --muted-foreground: 230 10% 60%;
+    --accent: 280 55% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 230 20% 20%;
+    --input: 230 20% 20%;
+    --ring: 245 58% 60%;
+    --sidebar-background: 230 25% 10%;
+    --sidebar-foreground: 230 15% 85%;
+    --sidebar-primary: 245 58% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 230 20% 15%;
+    --sidebar-accent-foreground: 230 15% 85%;
+    --sidebar-border: 230 20% 18%;
+    --sidebar-ring: 245 58% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-2xl;
+    box-shadow: var(--shadow-card);
+  }
+
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300;
+  }
+
+  .glass-card-hover:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
+  }
+
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .gradient-secondary {
+    background: var(--gradient-secondary);
+  }
+
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  .gradient-text {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .btn-primary-gradient {
+    background: var(--gradient-primary);
+    @apply text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-300;
+    box-shadow: 0 4px 15px -3px rgba(100, 80, 200, 0.4);
+  }
+
+  .btn-primary-gradient:hover {
+    box-shadow: 0 8px 25px -3px rgba(100, 80, 200, 0.5);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary-gradient:active {
+    transform: translateY(0);
+  }
+
+  .btn-secondary-gradient {
+    background: var(--gradient-secondary);
+    @apply text-secondary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-300;
+    box-shadow: 0 4px 15px -3px rgba(40, 160, 160, 0.4);
+  }
+
+  .btn-secondary-gradient:hover {
+    box-shadow: 0 8px 25px -3px rgba(40, 160, 160, 0.5);
+    transform: translateY(-1px);
+  }
+}
