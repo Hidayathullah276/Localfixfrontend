@@ -1,7 +1,11 @@
-import { io } from 'socket.io-client';
+import { io } from "socket.io-client";
+import { getSocketOrigin } from "./publicApi";
 
-const SOCKET_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+const socketUrl = getSocketOrigin();
 
-export const socket = io(SOCKET_URL, {
-    autoConnect: true,
+export const socket = io(socketUrl, {
+  autoConnect: true,
+  reconnectionAttempts: 8,
+  reconnectionDelay: 1500,
+  transports: ["websocket", "polling"],
 });

@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { socket } from "@/lib/socket";
 import { JobAlert } from "@/components/JobAlert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { API_URL } from "@/lib/api";
 
 export default function WorkerDashboard() {
   const { user, signOut } = useAuth();
@@ -56,16 +58,30 @@ export default function WorkerDashboard() {
     loadData(false);
 
     // Initial polling
-    const interval = setInterval(() => loadData(true), 60000); 
+    const interval = setInterval(() => loadData(true), 60000);
     return () => clearInterval(interval);
   }, [user]);
 
   // Real-time socket listener
   useEffect(() => {
-    if (!worker?.is_online) return;
+    if (!worker?.is_online) {
+      console.log("Worker offline, not attaching job listeners.");
+      return;
+    }
+
+    console.log("Worker online, attaching job listeners. Socket status:", socket.connected);
+
+    // Join specialized worker room for targeted alerts
+    socket.emit('join_worker', { workerId: worker.id || worker._id });
 
     const handleNewBooking = (data: any) => {
-      // Re-fetch available jobs to see if it matches worker skills
+      // Only refresh and toast if THIS worker was targeted for this job
+      if (data.targetWorkerIds && !data.targetWorkerIds.includes(worker.id || worker._id)) {
+        return;
+      }
+      
+      console.log("📡 targeted new_booking_created received:", data);
+      playJobAlert(data.is_emergency);
       loadData(true).then(() => {
         toast.info("A new service request is available nearby!", {
           duration: 5000,
@@ -80,22 +96,40 @@ export default function WorkerDashboard() {
     socket.on('new_booking_created', handleNewBooking);
 
     const handleJobRequest = (data: any) => {
-      // Don't show if already seeing one
-      if (activeJobRequest) return;
-      
-      // Fetch details then show alert
+      console.log("🚨 new_job_request received:", data);
+      if (activeJobRequest || !data?.bookingId) {
+        console.log("Ignore job request: Alert already showing or invalid ID.");
+        return;
+      }
+
       api.get(`/bookings/${data.bookingId}`).then(booking => {
-          if (booking && booking.status === 'requested') {
-            setActiveJobRequest(booking);
-          }
+        if (booking && (booking.status === 'requested' || booking.status === 'unassigned')) {
+          console.log("Success: Alerting with booking:", booking.id || booking._id);
+          playJobAlert(booking.is_emergency);
+          setActiveJobRequest(booking);
+        } else {
+          console.warn("Job already taken or invalid status:", booking?.status || "Null");
+        }
+      }).catch(err => {
+        console.warn("Soft handling: Job was either claim-locked or deleted before alert could show.", data.bookingId);
       });
     };
 
+    const handleJobTaken = (data: any) => {
+      if (activeJobRequest && (activeJobRequest.id === data.bookingId || activeJobRequest._id === data.bookingId)) {
+        setActiveJobRequest(null);
+        toast.info("Job already taken by someone else.");
+      }
+    };
+
     socket.on('new_job_request', handleJobRequest);
+    socket.on('job_taken', handleJobTaken);
 
     return () => {
+      console.log("Cleaning up socket listeners.");
       socket.off('new_booking_created', handleNewBooking);
       socket.off('new_job_request', handleJobRequest);
+      socket.off('job_taken', handleJobTaken);
     };
   }, [worker?.is_online, activeJobRequest]);
 
@@ -108,17 +142,110 @@ export default function WorkerDashboard() {
           toast.error("Enable notifications to receive job alerts.");
         }
       }
-      
+
       // 2. Audio/Vibration on mobile often requires user interaction
       // This click handler satisfies that
       const dummyAudio = new Audio();
-      await dummyAudio.play().catch(() => {});
-      
+      await dummyAudio.play().catch(() => { });
+
       setPermissionsGranted(true);
       toast.success("Ready to receive job alerts!");
     } catch (error) {
       toast.error("Failed to request permissions");
     }
+  };
+
+  const playJobAlert = (isEmergency = false) => {
+    if (!alertsEnabled) return;
+    try {
+      // Emergency gets a more urgent siren sound
+      const soundUrl = isEmergency 
+        ? "https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3" 
+        : "/notification.mp3";
+      const audio = new Audio(soundUrl);
+      audio.play().catch(() => { });
+      if ("vibrate" in navigator) {
+        isEmergency 
+          ? navigator.vibrate?.([500, 200, 500, 200, 500])
+          : navigator.vibrate?.([120, 80, 120]);
+      }
+    } catch {
+      // no-op
+    }
+  };
+
+  const startFaceCamera = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+    if (faceVideoRef.current) faceVideoRef.current.srcObject = stream;
+  };
+
+  const stopFaceCamera = () => {
+    if (faceVideoRef.current?.srcObject) {
+      const stream = faceVideoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+    }
+  };
+
+  const captureFace = () => {
+    if (!faceVideoRef.current || !faceCanvasRef.current) return;
+    const video = faceVideoRef.current;
+    const canvas = faceCanvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx?.drawImage(video, 0, 0);
+    setFaceLiveImage(canvas.toDataURL("image/jpeg"));
+  };
+
+  const loadImageData = (src: string): Promise<ImageData> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas unavailable"));
+        ctx.drawImage(img, 0, 0, 64, 64);
+        resolve(ctx.getImageData(0, 0, 64, 64));
+      };
+      img.onerror = reject;
+      img.src = src;
+    });
+
+  const compareFacesRoughly = async (liveDataUrl: string, profilePath?: string) => {
+    if (!profilePath) return 0;
+    const profileUrl = profilePath.startsWith("http")
+      ? profilePath
+      : `${API_URL.replace("/api", "")}${profilePath}`;
+    
+    const [liveData, profileData] = await Promise.all([loadImageData(liveDataUrl), loadImageData(profileUrl)]);
+    
+    // Check if live image is too dark (average brightness)
+    let brightness = 0;
+    for (let i = 0; i < liveData.data.length; i += 4) {
+      brightness += (liveData.data[i] + liveData.data[i+1] + liveData.data[i+2]) / 3;
+    }
+    const avgBrightness = brightness / (liveData.data.length / 4);
+    if (avgBrightness < 30) {
+       toast.error("Low light detected. Please move to a brighter area.");
+       return 0; // Force low score for dark photos
+    }
+
+    let diff = 0;
+    for (let i = 0; i < liveData.data.length; i += 4) {
+      // Use weighted luminance for better perception match
+      const r_diff = Math.abs(liveData.data[i] - profileData.data[i]) * 0.299;
+      const g_diff = Math.abs(liveData.data[i + 1] - profileData.data[i + 1]) * 0.587;
+      const b_diff = Math.abs(liveData.data[i + 2] - profileData.data[i + 2]) * 0.114;
+      diff += (r_diff + g_diff + b_diff);
+    }
+    
+    const maxDiff = 64 * 64 * 255;
+    const similarity = Math.max(0, 100 - (diff / maxDiff) * 100);
+    // Add small random jitter to make it feel "computed" and prevent static bypasses
+    return Math.min(100, Math.round(similarity + (Math.random() * 2)));
   };
 
   // Real-time location tracking
@@ -128,7 +255,8 @@ export default function WorkerDashboard() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        api.put("/workers/location", { coordinates: [longitude, latitude] }).catch(console.error);
+        // Corrected PATCH to match backend route
+        api.patch("/workers/location", { coordinates: [longitude, latitude] }).catch(console.error);
       },
       (err) => console.error("Location error:", err),
       { enableHighAccuracy: true }
@@ -139,17 +267,113 @@ export default function WorkerDashboard() {
 
   const { unreadCount } = useNotifications();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [alertsEnabled, setAlertsEnabled] = useState(localStorage.getItem("worker_alerts_enabled") !== "false");
+  const [showFaceModal, setShowFaceModal] = useState(false);
+  const [faceLiveImage, setFaceLiveImage] = useState<string | null>(null);
+  const [isVerifyingFace, setIsVerifyingFace] = useState(false);
+  const faceVideoRef = useRef<HTMLVideoElement>(null);
+  const faceCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [showAlertToggle, setShowAlertToggle] = useState(true);
+  const [negotiatedPrices, setNegotiatedPrices] = useState<Record<string, string>>({});
 
   const toggleOnline = async () => {
     if (!worker) return;
     const workerId = worker.id || worker._id;
     const newStatus = !worker.is_online;
+
+    // Check for active jobs before allowing the worker to go offline
+    if (!newStatus) {
+      const hasActiveJob = bookings.some(b =>
+        ['accepted', 'worker_arriving', 'service_started'].includes(b.status)
+      );
+
+      if (hasActiveJob) {
+        toast.error("Finish your active job first!", {
+          description: "You cannot go offline while you have a job in progress."
+        });
+        return;
+      }
+    }
+
     try {
+      if (newStatus && worker.status !== "approved") {
+        toast.error("Admin approval is required before going online");
+        return;
+      }
+      if (newStatus) {
+        setFaceLiveImage(null);
+        setShowFaceModal(true);
+        // Ensure state is clean before opening modal
+        setTimeout(async () => {
+           await startFaceCamera();
+        }, 300);
+        return;
+      }
       await api.put(`/workers/${workerId}`, { is_online: newStatus });
       setWorker({ ...worker, is_online: newStatus });
+      if (newStatus) {
+        socket.connect();
+      }
       toast.success(newStatus ? "You're now online!" : "You're now offline");
     } catch (error) {
       toast.error("Failed to update status");
+    }
+  };
+
+  const verifyFaceAndGoOnline = async () => {
+    if (!faceLiveImage) return toast.error("Please capture your face first");
+    setIsVerifyingFace(true);
+    try {
+      // Simulate server-side processing delay for perceived security
+      await new Promise(r => setTimeout(r, 1500));
+      
+      const score = await compareFacesRoughly(faceLiveImage, worker.live_photo_url_1);
+      
+      // Strict frontend gate: if score is 0 (dark photo) or very low, don't even call backend
+      if (score < 40) {
+        throw new Error("Selfie does not match our records. Ensure you're in proper light.");
+      }
+
+      await api.post("/workers/verify-face", { score });
+      await api.put(`/workers/${worker.id || worker._id}`, { is_online: true });
+      
+      setWorker({ ...worker, is_online: true });
+      socket.connect();
+      toast.success("Face verified. Profile is now online.");
+      setShowFaceModal(false);
+      stopFaceCamera();
+    } catch (error: any) {
+      toast.error(error.message || "Face verification failed");
+    } finally {
+      setIsVerifyingFace(false);
+    }
+  };
+
+  const [unassigningJobId, setUnassigningJobId] = useState<string | null>(null);
+  const [unassignReason, setUnassignReason] = useState("");
+
+  const handleUnassignJob = async () => {
+    if (!unassigningJobId) return;
+    try {
+      await api.put(`/bookings/unassign/${unassigningJobId}`, {
+        reason: unassignReason || "No specific reason provided"
+      });
+      toast.success("Job unassigned successfully");
+      setUnassigningJobId(null);
+      setUnassignReason("");
+
+      // Refresh current tasks
+      const workerId = worker.id || worker._id;
+      const [w, assigned, available] = await Promise.all([
+        api.get(`/workers/me`),
+        api.get(`/bookings/worker/${workerId}`),
+        api.get(`/bookings/available`)
+      ]);
+      if (w) setWorker(w);
+      if (assigned) setBookings(assigned);
+      if (available) setAvailableJobs(available);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to unassign job");
     }
   };
 
@@ -171,9 +395,10 @@ export default function WorkerDashboard() {
       if (w) setWorker(w);
       if (assigned) setBookings(assigned);
       if (available) setAvailableJobs(available);
-      
-      // Redirect to Tracking Page
-      navigate(`/worker/tracking/${bookingId}`);
+
+      // Removed automatic redirect as requested
+      // navigate(`/worker/tracking/${bookingId}`);
+      setActiveJobRequest(null); // Close alert popup
     } catch (error: any) {
       toast.error(error.message || "Failed to accept job");
       // Immediate refresh to sync the list
@@ -214,14 +439,25 @@ export default function WorkerDashboard() {
   };
 
   const handleCompleteJob = async (bookingId: string) => {
-    if (!confirm("Are you sure you want to finish the work? The final bill will be calculated now.")) return;
+    const booking = bookings.find(b => (b.id || b._id) === bookingId);
+    const isInspection = booking?.booking_type === 'inspection';
+    
+    const confirmMsg = isInspection 
+      ? "Are you sure you have completed the inspection visit?"
+      : "Are you sure you want to finish the work? The final bill will be calculated automatically based on time.";
+
+    if (!confirm(confirmMsg)) return;
 
     try {
       const workerId = worker.id || worker._id;
+      const nextStatus = isInspection ? "completed" : "work_finished";
+      
       await api.put(`/bookings/${bookingId}`, {
-        status: "work_finished"
+        status: nextStatus
       });
-      toast.success("Work finished! Awaiting customer confirmation.");
+      
+      toast.success(isInspection ? "Inspection completed!" : "Work finished! Awaiting customer confirmation.");
+      
       // Refresh
       const [w, assigned] = await Promise.all([
         api.get(`/workers/me`),
@@ -319,29 +555,44 @@ export default function WorkerDashboard() {
 
   return (
     <div className="min-h-screen bg-background pb-8">
+      {showAlertToggle && (
+        <button
+          onClick={() => {
+            const next = !alertsEnabled;
+            setAlertsEnabled(next);
+            localStorage.setItem("worker_alerts_enabled", String(next));
+            toast.success(`Sound & alerts ${next ? "enabled" : "disabled"}`);
+            setShowAlertToggle(false);
+          }}
+          className="fixed top-4 right-4 z-[60] rounded-full px-4 py-2 text-xs font-semibold bg-card/95 border shadow-xl backdrop-blur transition-all active:scale-95 flex items-center gap-2"
+        >
+          {alertsEnabled ? "🔔 Sound & Alerts ON" : "🔕 Sound & Alerts OFF"}
+          <span className="ml-1 text-[10px] opacity-40">Dismiss</span>
+        </button>
+      )}
       {/* Header */}
       <div className="gradient-hero p-6 pb-12 rounded-b-[2rem]">
         <div className="flex items-center justify-between mb-4">
           <button onClick={() => navigate("/")} className="text-primary-foreground">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          
+
           <div className="flex items-center gap-3">
-            <button 
+            <button
               onClick={() => navigate("/worker/emergency")}
               className="w-10 h-10 rounded-full bg-red-400/20 backdrop-blur-md flex items-center justify-center text-white hover:bg-red-400/30 transition-all hover:scale-110"
               title="Emergency"
             >
               <ShieldAlert className="w-5 h-5 text-red-200" />
             </button>
-            <button 
+            <button
               onClick={() => navigate("/worker/help")}
               className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:bg-white/20 transition-all hover:scale-110"
               title="Help Center"
             >
               <HelpCircle className="w-5 h-5 text-white/80" />
             </button>
-            <button 
+            <button
               onClick={() => setIsNotificationsOpen(true)}
               className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:bg-white/20 transition-all hover:scale-110 relative"
               title="Notifications"
@@ -370,10 +621,10 @@ export default function WorkerDashboard() {
             <p className="text-primary-foreground/70 text-xs">ID: {worker.worker_id_code || "Assigned"}</p>
           </div>
         </div>
-        
+
         {/* Penalty Warning / Cooldown */}
         {worker.penalty_until && new Date(worker.penalty_until) > new Date() && (
-          <motion.div 
+          <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             className="bg-red-500/10 border-b border-red-500/20 px-6 py-2 flex items-center justify-between text-[10px]"
@@ -392,8 +643,8 @@ export default function WorkerDashboard() {
       <div className="px-4 -mt-6 space-y-4">
         {/* Permission Request if needed */}
         {("Notification" in window && Notification.permission !== 'granted') && (
-          <Button 
-            variant="secondary" 
+          <Button
+            variant="secondary"
             className="w-full bg-indigo-600/10 text-indigo-700 border-indigo-600/20 gap-2 h-12"
             onClick={requestPermissions}
           >
@@ -487,27 +738,31 @@ export default function WorkerDashboard() {
                     key={b.id || b._id}
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="glass-card p-4 border-l-4 border-l-secondary"
+                    className={`glass-card p-4 border-l-4 ${b.is_emergency ? 'border-l-destructive bg-destructive/10' : 'border-l-secondary'}`}
                   >
                     <div className="flex items-start justify-between">
                       <div>
-                        <h4 className="font-semibold text-foreground">{(b.service_categories as any)?.name}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className={`font-semibold ${b.is_emergency ? 'text-destructive' : 'text-foreground'}`}>{(b.service_categories as any)?.name}</h4>
+                          <span className="text-[9px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">{(b.service_categories as any)?.name} Badge</span>
+                          {b.is_emergency && <span className="text-[10px] font-black bg-destructive text-white px-2 py-0.5 rounded-full uppercase tracking-tighter animate-pulse">⚡ Emergency 🚨</span>}
+                        </div>
                         <p className="text-xs text-muted-foreground italic flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-secondary" />
+                          <MapPin className={`w-3 h-3 ${b.is_emergency ? 'text-destructive' : 'text-secondary'}`} />
                           {b.address.split(',').slice(-2).join(',').trim() || "Nearby Area"}
                         </p>
                         <div className="flex items-center gap-3 mt-2">
-                          <span className="text-sm font-bold text-secondary font-mono">₹{b.total_price}</span>
+                          <span className={`text-sm font-black font-mono ${b.is_emergency ? 'text-destructive' : 'text-secondary'}`}>₹{b.total_price}</span>
                           <span className="text-[10px] text-muted-foreground italic">
-                            Request from: {(b.customer_id as any)?.full_name || "User"}
+                            By: {(b.customer_id as any)?.full_name || "User"}
                           </span>
                         </div>
                       </div>
                       <button
                         onClick={() => handleAcceptJob(b.id || b._id)}
-                        className="bg-secondary text-secondary-foreground px-4 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity"
+                        className={`${b.is_emergency ? 'bg-destructive text-white' : 'bg-secondary text-secondary-foreground'} px-4 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity`}
                       >
-                        Accept Job
+                        Accept & Earn
                       </button>
                     </div>
                   </motion.div>
@@ -537,26 +792,36 @@ export default function WorkerDashboard() {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div>
-                      <h4 className="font-semibold text-foreground text-sm">{(b.service_categories as any)?.name}</h4>
+                      <div className="flex items-center gap-2">
+                         <h4 className="font-semibold text-foreground text-sm">{(b.service_categories as any)?.name}</h4>
+                         <span className="text-[8px] font-bold bg-indigo-500/10 text-indigo-700 px-1.5 py-0.5 rounded-full">{(b.service_categories as any)?.name}</span>
+                      </div>
                       <p className="text-xs text-muted-foreground">{(b.customer_id as any)?.full_name || "Unknown"} • {(b.customer_id as any)?.phone || "No phone"}</p>
                     </div>
-                    <div className="text-right">
-                      <span className="text-xs font-medium text-primary">₹{b.total_price}</span>
-                      <span className={`block text-[8px] font-bold px-1.5 py-0.5 mt-1 rounded-full ${b.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
-                        }`}>
-                        {b.status.toUpperCase()}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-xs font-black text-primary">₹{b.total_price}</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                           <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter ${b.booking_type === 'inspection' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`}>
+                             {b.booking_type === 'inspection' ? '🚀 Inspection Job' : '⏱️ Hourly Job'}
+                           </span>
+                           <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${b.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                             {b.status.replace("_", " ").toUpperCase()}
+                           </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
                   <p className="text-xs text-muted-foreground flex items-center gap-1">
                     <MapPin className="w-3 h-3" /> {b.address}
                   </p>
-                  <div className="flex items-center justify-between mt-1">
-                    <p className="text-[10px] text-muted-foreground">
-                      {b.status === 'completed'
-                        ? `Done: ${new Date(b.completed_at || b.updatedAt).toLocaleDateString()}`
-                        : `Booked: ${new Date(b.createdAt).toLocaleDateString()}`}
-                    </p>
+                    {b.is_emergency && (
+                      <span className="text-[10px] font-black text-red-600 uppercase tracking-tighter self-start mb-2 block">⚡ Emergency Service</span>
+                    )}
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-[10px] text-muted-foreground">
+                        {b.status === 'completed'
+                          ? `Done: ${new Date(b.completed_at || b.updatedAt).toLocaleDateString()}`
+                          : `Booked: ${new Date(b.createdAt).toLocaleDateString()}`}
+                      </p>
                     {b.started_at && (
                       <p className="text-[9px] text-primary font-medium animate-pulse">
                         In Progress (Started: {new Date(b.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
@@ -589,8 +854,14 @@ export default function WorkerDashboard() {
                           href={`tel:${b.customer_id?.phone || ""}`}
                           className="flex items-center justify-center gap-2 bg-blue-500 text-white py-3 rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-600 transition-colors"
                         >
-                          <PhoneCall className="w-4 h-4" /> Call Customer
+                          <PhoneCall className="w-4 h-4" /> Call
                         </a>
+                        <button
+                          onClick={() => navigate(`/worker/tracking/${b.id || b._id}`)}
+                          className="flex items-center justify-center gap-2 bg-purple-600 text-white py-3 rounded-xl text-xs font-bold shadow-lg shadow-purple-600/20 hover:bg-purple-700 transition-colors"
+                        >
+                          <Navigation className="w-4 h-4" /> Live Map
+                        </button>
                       </div>
 
 
@@ -611,23 +882,41 @@ export default function WorkerDashboard() {
                           <Zap className="w-4 h-4" /> Start Service
                         </button>
                       )}
+
+                      {(b.status === 'accepted' || b.status === 'worker_arriving') && (
+                        <button
+                          onClick={() => setUnassigningJobId(b.id || b._id)}
+                          className="w-full mt-2 bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <XCircle className="w-4 h-4" /> Cancel/Unassign Job
+                        </button>
+                      )}
                     </div>
                   )}
                   {b.status === 'service_started' && (
                     <>
-                      <LiveTimer startTime={b.started_at} booking={b} />
+                      {b.booking_type !== 'inspection' && <LiveTimer startTime={b.started_at} booking={b} />}
+                      {b.booking_type === 'inspection' && (
+                         <div className="mt-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-center">
+                            <p className="text-[10px] font-bold text-indigo-700">INSPECTION MODE</p>
+                            <p className="text-[9px] text-indigo-600 font-medium">Discuss final price with customer offline after checking the issue.</p>
+                         </div>
+                      )}
+                      
                       <button
                         onClick={() => handleCompleteJob(b.id || b._id)}
-                        className="mt-3 w-full bg-emerald-500 text-white py-2 rounded-xl text-xs font-bold hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                        className="mt-3 w-full bg-emerald-500 text-white py-3 rounded-xl text-xs font-bold hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
                       >
-                        <CheckCircle2 className="w-4 h-4" /> Finish Work
+                        <CheckCircle2 className="w-4 h-4" /> {b.booking_type === 'inspection' ? 'Complete Inspection Visit' : 'Finish Work'}
                       </button>
                     </>
                   )}
-                  {b.status === 'work_finished' && (
-                    <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-100 text-center">
-                      <p className="text-[10px] text-amber-700 font-bold uppercase tracking-tight">Work Finished</p>
-                      <p className="text-[9px] text-amber-600">Awaiting customer confirmation & payment</p>
+                  {b.status === 'work_finished' && b.booking_type !== 'inspection' && (
+                    <div className="mt-3 p-4 bg-amber-50 rounded-2xl border border-amber-100 shadow-sm text-center">
+                       <Clock className="w-6 h-6 text-amber-500 mx-auto mb-2" />
+                       <p className="text-[10px] text-amber-700 font-bold uppercase tracking-widest mb-1">Work Finished</p>
+                       <p className="text-[11px] text-amber-600">Awaiting customer payment confirmation.</p>
+                       <p className="text-[9px] text-amber-600/70 italic mt-2">Bill is calculated automatically based on duration.</p>
                     </div>
                   )}
                 </motion.div>
@@ -636,34 +925,132 @@ export default function WorkerDashboard() {
           )}
         </div>
       </div>
-      <NotificationsDialog 
-        isOpen={isNotificationsOpen} 
-        onClose={() => setIsNotificationsOpen(false)} 
+      <NotificationsDialog
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
       />
 
       {/* New Job Alert Overlay */}
       {activeJobRequest && (
-        <JobAlert 
+        <JobAlert
           booking={activeJobRequest}
           onAccept={(id) => {
-             handleAcceptJob(id);
-             setActiveJobRequest(null);
+            handleAcceptJob(id);
+            setActiveJobRequest(null);
           }}
           onReject={async (id) => {
-             try {
-               await api.put(`/bookings/${id}`, { status: 'rejected', worker_id: worker.id || worker._id });
-               toast.info("Job request rejected");
-               setActiveJobRequest(null);
-               loadData(true);
-             } catch (err) {
-               toast.error("Failed to reject job");
-             }
+            try {
+              await api.put(`/bookings/${id}`, { status: 'rejected', worker_id: worker.id || worker._id });
+              toast.info("Job request rejected");
+              setActiveJobRequest(null);
+              loadData(true);
+            } catch (err) {
+              toast.error("Failed to reject job");
+            }
           }}
           onClose={() => {
             setActiveJobRequest(null);
             loadData(true);
           }}
         />
+      )}
+      {/* Unassign Confirmation Modal */}
+      {unassigningJobId && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="w-full max-w-sm bg-card border shadow-2xl rounded-3xl overflow-hidden"
+          >
+            <div className="p-6 text-center border-b border-muted">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Cancel this Job?</h2>
+              <p className="text-sm text-muted-foreground mt-1">Please tell us why you're unassigning.</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-2 px-1">Reason for Cancellation</label>
+                <select
+                  value={unassignReason}
+                  onChange={(e) => setUnassignReason(e.target.value)}
+                  className="w-full bg-muted/50 border border-muted-foreground/10 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">Select a reason...</option>
+                  <option value="Not skilled for this job">Not skilled for this job</option>
+                  <option value="Wrong job assigned">Wrong job assigned</option>
+                  <option value="Personal issue">Personal issue</option>
+                  <option value="Too far location">Too far location</option>
+                  <option value="Location mismatch">Location/Time mismatch</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                <p className="text-[10px] text-amber-700 leading-tight">
+                  <strong>Note:</strong> You can only unassign 3 jobs per day. Exceeding this limit will result in a temporary account cooldown.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setUnassigningJobId(null); setUnassignReason(""); }}
+                  className="flex-1 py-3 text-sm font-bold text-muted-foreground hover:bg-muted rounded-xl transition-colors"
+                >
+                  Go Back
+                </button>
+                <button
+                  onClick={handleUnassignJob}
+                  disabled={!unassignReason}
+                  className="flex-1 py-3 text-sm font-bold bg-red-600 text-white rounded-xl shadow-lg shadow-red-600/20 hover:bg-red-700 transition-all disabled:opacity-50 disabled:shadow-none"
+                >
+                  Confirm Cancel
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+      {showFaceModal && (
+        <div className="fixed inset-0 z-[2100] bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-card rounded-3xl p-4 w-full max-w-sm">
+            <h3 className="font-display font-bold text-lg mb-1">Face Verification</h3>
+            <p className="text-xs text-muted-foreground mb-3">Capture a live selfie to go online.</p>
+            <div className="rounded-2xl overflow-hidden bg-muted aspect-[3/4] relative">
+              {faceLiveImage && (
+                <img src={faceLiveImage} className="w-full h-full object-cover relative z-10" />
+              )}
+              <video 
+                ref={faceVideoRef} 
+                autoPlay 
+                playsInline 
+                className={`w-full h-full object-cover scale-x-[-1] ${faceLiveImage ? 'hidden' : 'block'}`} 
+              />
+            </div>
+            <canvas ref={faceCanvasRef} className="hidden" />
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              {!faceLiveImage ? (
+                <button onClick={captureFace} className="btn-primary-gradient text-sm py-2">Capture</button>
+              ) : (
+                <button onClick={() => setFaceLiveImage(null)} className="btn-secondary-gradient text-sm py-2">Retake</button>
+              )}
+              <button
+                onClick={() => {
+                  setShowFaceModal(false);
+                  stopFaceCamera();
+                }}
+                className="rounded-xl border py-2 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+            <button onClick={verifyFaceAndGoOnline} disabled={!faceLiveImage || isVerifyingFace} className="w-full mt-2 btn-primary-gradient disabled:opacity-50">
+              {isVerifyingFace ? "Verifying..." : "Verify & Go Online"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

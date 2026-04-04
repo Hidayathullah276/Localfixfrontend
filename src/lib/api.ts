@@ -1,9 +1,7 @@
-const rawUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-// Normalize: remove trailing slash, then ensure it ends with /api
-const cleanUrl = rawUrl.replace(/\/$/, "");
-const API_URL = cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
+import { getRestApiBase, getSocketOrigin } from "./publicApi";
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || cleanUrl.replace('/api', '') || 'http://localhost:5000';
+const API_URL = getRestApiBase();
+const SOCKET_URL = getSocketOrigin();
 
 export const api = {
     get: async (endpoint: string) => {
@@ -14,7 +12,7 @@ export const api = {
                 'Content-Type': 'application/json'
             }
         });
-        
+
         const responseText = await response.text();
         let data;
         try {
@@ -142,5 +140,34 @@ export const api = {
             throw error;
         }
         return data;
+    },
+    postFormData: async (endpoint: string, formData: FormData) => {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_URL}${endpoint}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': token ? `Bearer ${token}` : '',
+            },
+            body: formData
+        });
+
+        const responseText = await response.text();
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (e) {
+            data = responseText;
+        }
+
+        if (!response.ok) {
+            const errorMsg = data?.message || (typeof data === 'string' ? data : 'An error occurred');
+            const error: any = new Error(errorMsg);
+            error.data = data;
+            error.status = response.status;
+            throw error;
+        }
+        return data;
     }
 };
+
+export { API_URL, SOCKET_URL };

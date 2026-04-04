@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, API_URL } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSettings } from "@/contexts/SettingsContext";
 import { ServiceIcon } from "@/components/ServiceIcon";
 import { BottomNav } from "@/components/BottomNav";
 import { motion } from "framer-motion";
 import { useNotifications } from "@/hooks/useNotifications";
 import { NotificationsDialog } from "@/components/NotificationsDialog";
-import { MapPin, Bell, Search, Star, ArrowRight, Zap, Wrench, Sparkles, Home, Truck, Thermometer, Hammer, ChevronRight, HelpCircle, Loader2 } from "lucide-react";
+import { MapPin, Bell, Search, Star, ArrowRight, Zap, Wrench, Sparkles, Home, Truck, Thermometer, Hammer, ChevronRight, HelpCircle, Loader2, ShoppingBag } from "lucide-react";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { toast } from "sonner";
 
@@ -22,12 +23,16 @@ interface ServiceCategory {
 
 export default function CustomerHome() {
   const { user } = useAuth();
+  const { ecommerceEnabled } = useSettings();
   const navigate = useNavigate();
   const { unreadCount } = useNotifications();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [services, setServices] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [shopPreview, setShopPreview] = useState<
+    { _id: string; name: string; price: number; image?: string; rating?: number }[]
+  >([]);
   const { detectLocation, loading: locating, address } = useGeolocation();
 
   useEffect(() => {
@@ -47,6 +52,26 @@ export default function CustomerHome() {
         setLoading(false);
       });
   }, []);
+
+  useEffect(() => {
+    if (ecommerceEnabled !== true) {
+      setShopPreview([]);
+      return;
+    }
+    api
+      .get("/products?prioritize=customer")
+      .then((list: typeof shopPreview) => {
+        const arr = Array.isArray(list) ? list : [];
+        setShopPreview(arr.slice(0, 4).map((p) => ({
+          _id: p._id || (p as { id?: string }).id || "",
+          name: p.name,
+          price: p.price,
+          image: p.image,
+          rating: p.rating,
+        })));
+      })
+      .catch(() => setShopPreview([]));
+  }, [ecommerceEnabled]);
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -203,15 +228,25 @@ export default function CustomerHome() {
               transition={{ delay: idx * 0.05 }}
               className="flex-shrink-0"
             >
-              <Link
-                to={`/services?category=${s.name.toLowerCase()}`}
-                className="flex flex-col items-center gap-2 p-4 rounded-2xl glass-card-hover border-border/40 min-w-[90px]"
+              <button
+                onClick={() => {
+                  const match = services.find(srv => 
+                    srv.name.toLowerCase().includes(s.name.toLowerCase()) || 
+                    s.name.toLowerCase().includes(srv.name.toLowerCase())
+                  );
+                  if (match) {
+                    navigate(`/book/${match._id}`);
+                  } else {
+                    navigate(`/services?category=${s.name.toLowerCase()}`);
+                  }
+                }}
+                className="flex flex-col items-center gap-2 p-4 rounded-2xl glass-card-hover border-border/40 min-w-[90px] text-center"
               >
                 <div className={`w-12 h-12 rounded-2xl ${s.bg} flex items-center justify-center shadow-inner`}>
                   <s.icon className={`w-6 h-6 ${s.color}`} />
                 </div>
                 <span className="text-[11px] font-bold text-foreground">{s.name}</span>
-              </Link>
+              </button>
             </motion.div>
           ))}
         </div>
@@ -286,6 +321,80 @@ export default function CustomerHome() {
           </div>
         )}
       </div>
+
+      {ecommerceEnabled === true && (
+        <div className="px-4 mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display font-bold text-foreground text-lg bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 bg-clip-text text-transparent">
+              Shop Tools &amp; Essentials
+            </h2>
+            <Link
+              to="/shop"
+              className="text-xs font-bold text-violet-600 flex items-center gap-1 hover:gap-1.5 transition-all"
+            >
+              Shop all <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            Tools for workers · Electrical, plumbing &amp; home essentials for everyone.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {shopPreview.length === 0
+              ? [1, 2, 3, 4].map((i) => (
+                  <div key={i} className="rounded-2xl h-32 bg-muted/50 animate-pulse border border-border/40" style={{ borderRadius: "16px" }} />
+                ))
+              : shopPreview.map((p, i) => (
+                  <motion.div
+                    key={p._id}
+                    initial={{ opacity: 0, y: 8 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.05, duration: 0.3 }}
+                  >
+                    <Link
+                      to="/shop"
+                      className="block rounded-2xl border border-border/50 bg-card/90 overflow-hidden shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all duration-300 ease-out"
+                      style={{ borderRadius: "16px" }}
+                    >
+                      <div className="aspect-[4/3] bg-muted/40 flex items-center justify-center">
+                        {p.image ? (
+                          <img
+                            src={
+                              p.image.startsWith("http")
+                                ? p.image
+                                : `${API_URL.replace(/\/api$/, "")}${p.image.startsWith("/") ? p.image : `/${p.image}`}`
+                            }
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <ShoppingBag className="w-10 h-10 text-muted-foreground/35" />
+                        )}
+                      </div>
+                      <div className="p-3">
+                        <p className="text-xs font-semibold text-foreground line-clamp-2">{p.name}</p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-sm font-bold text-violet-600">₹{p.price}</span>
+                          <span className="flex items-center gap-0.5 text-amber-500 text-[10px]">
+                            <Star className="w-3 h-3 fill-current" />
+                            {p.rating?.toFixed(1) ?? "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  </motion.div>
+                ))}
+          </div>
+          <Link
+            to="/shop"
+            className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-sm text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 shadow-md shadow-violet-500/25 hover:scale-[1.02] transition-all duration-300"
+            style={{ borderRadius: "16px" }}
+          >
+            <ShoppingBag className="w-4 h-4" />
+            Open shop
+          </Link>
+        </div>
+      )}
 
       <BottomNav />
       <NotificationsDialog 

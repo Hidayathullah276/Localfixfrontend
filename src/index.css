@@ -96,6 +96,8 @@
 
   body {
     @apply bg-background text-foreground font-body antialiased;
+    background: linear-gradient(135deg, #f6f4ff 0%, #eef4ff 50%, #f5efff 100%);
+    min-height: 100vh;
   }
 
   h1,
@@ -110,7 +112,7 @@
 
 @layer components {
   .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-2xl;
+    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-2xl transition-all duration-300;
     box-shadow: var(--shadow-card);
   }
 
@@ -120,7 +122,7 @@
 
   .glass-card-hover:hover {
     box-shadow: var(--shadow-card-hover);
-    transform: translateY(-2px);
+    transform: translateY(-2px) scale(1.01);
   }
 
   .gradient-primary {
@@ -144,7 +146,7 @@
 
   .btn-primary-gradient {
     background: var(--gradient-primary);
-    @apply text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-300;
+    @apply text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-300 relative overflow-hidden;
     box-shadow: 0 4px 15px -3px rgba(100, 80, 200, 0.4);
   }
 
@@ -166,5 +168,16 @@
   .btn-secondary-gradient:hover {
     box-shadow: 0 8px 25px -3px rgba(40, 160, 160, 0.5);
     transform: translateY(-1px);
+  }
+
+  .btn-shop-gradient {
+    background: linear-gradient(135deg, hsl(265, 70%, 48%), hsl(230, 70%, 50%), hsl(250, 60%, 52%));
+    @apply text-white font-semibold rounded-2xl px-6 py-3 transition-all duration-300;
+    box-shadow: 0 6px 20px -4px rgba(100, 70, 220, 0.45);
+  }
+
+  .btn-shop-gradient:hover {
+    box-shadow: 0 10px 30px -4px rgba(100, 70, 220, 0.55);
+    transform: scale(1.03);
   }
 }

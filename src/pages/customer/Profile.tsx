@@ -1,19 +1,47 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { BottomNav } from "@/components/BottomNav";
 import { motion } from "framer-motion";
-import { User, Phone, LogOut, ChevronRight, Shield, Star, Settings, HelpCircle } from "lucide-react";
+import { User, Phone, LogOut, ChevronRight, Shield, Star, Settings, HelpCircle, ShoppingBag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 
 export default function Profile() {
-  const { user, signOut, roles } = useAuth();
+  const { user, signOut, roles, refreshUser } = useAuth();
   const navigate = useNavigate();
+  const [newPhone, setNewPhone] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/auth");
   };
 
+  const updatePhone = async () => {
+    if (!newPhone.trim()) return toast.error("Enter new mobile number");
+    if (!currentPassword) return toast.error("Enter your current password");
+    setLoading(true);
+    try {
+      await api.put("/auth/me", {
+        phone: newPhone.trim(),
+        currentPassword,
+      });
+      setNewPhone("");
+      setCurrentPassword("");
+      await refreshUser();
+      toast.success("Mobile number updated");
+    } catch (e: any) {
+      toast.error(e.message || "Update failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const menuItems = [
+    { icon: ShoppingBag, label: "My orders (Shop)", action: () => navigate("/shop/orders") },
     { icon: Star, label: "My Reviews", action: () => navigate("/profile/reviews") },
     { icon: Shield, label: "Privacy & Security", action: () => navigate("/profile/privacy") },
     { icon: HelpCircle, label: "Help & Support", action: () => navigate("/profile/help") },
@@ -22,9 +50,9 @@ export default function Profile() {
 
   if (!roles.includes("worker") && !roles.includes("admin")) {
     menuItems.unshift({
-      icon: Star, // Using Star icon for prominence, maybe changed later
+      icon: Star,
       label: "Become a Worker",
-      action: () => navigate("/worker/register")
+      action: () => navigate("/worker/register"),
     });
   }
 
@@ -52,7 +80,6 @@ export default function Profile() {
       </div>
 
       <div className="px-4 -mt-6 space-y-3">
-        {/* Role shortcuts */}
         {roles.includes("worker") && (
           <motion.button
             initial={{ opacity: 0, y: 10 }}
@@ -76,7 +103,27 @@ export default function Profile() {
           </motion.button>
         )}
 
-        {/* Menu */}
+        <div className="glass-card p-4 space-y-3">
+          <p className="text-sm font-semibold text-foreground">Change mobile number</p>
+          <p className="text-xs text-muted-foreground">Confirm with your account password.</p>
+          <Input
+            type="password"
+            placeholder="Current password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+          <Input
+            placeholder="New mobile number"
+            value={newPhone}
+            onChange={(e) => setNewPhone(e.target.value)}
+            autoComplete="tel"
+          />
+          <button onClick={updatePhone} disabled={loading} className="w-full btn-primary-gradient">
+            {loading ? "Saving..." : "Update number"}
+          </button>
+        </div>
+
         <div className="glass-card overflow-hidden">
           {menuItems.map((item, i) => (
             <motion.button

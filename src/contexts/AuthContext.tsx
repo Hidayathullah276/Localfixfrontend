@@ -18,6 +18,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (data: { token: string; user: any }) => void;
   signOut: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -27,6 +28,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signIn: () => { },
   signOut: () => { },
+  refreshUser: async () => { },
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -65,6 +67,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    if (!token) return;
+    const userData = await api.get("/auth/me");
+    setUser(userData);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -73,7 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roles: user?.roles || [],
         loading,
         signIn,
-        signOut
+        signOut,
+        refreshUser
       }}
     >
       {children}

@@ -50,7 +50,7 @@ export default function CustomerTracking() {
           return;
         }
 
-        if (curr.status !== "accepted" && curr.status !== "worker_arriving" && curr.status !== "service_started") {
+        if (!['accepted', 'worker_arriving', 'service_started', 'unassigned', 'requested'].includes(curr.status)) {
            navigate("/bookings"); // redirect if not active
            return;
         }
@@ -85,7 +85,13 @@ export default function CustomerTracking() {
 
     socket.on('booking_updated', (data) => {
       if (data.id === id || data._id === id) {
-        setBooking(data);
+        setBooking((prev: any) => ({ ...prev, ...data }));
+        
+        if (data.status === "unassigned" || data.status === "requested") {
+           toast.info("Updating worker assignment...");
+           setWorkerLocation(null); // Clear old worker location
+        }
+
         if (data.status === "completed" || data.status === "cancelled") {
            toast.info("Job finished or cancelled");
            navigate("/bookings");
@@ -133,6 +139,7 @@ export default function CustomerTracking() {
         <div className="absolute inset-x-0 top-0 bottom-[220px] bg-slate-100">
            {(customerLocation || workerLocation) ? (
              <MapContainer
+               key={`map-v2-${id || "new"}`}
                center={workerLocation || customerLocation || [20.5937, 78.9629]}
                zoom={14}
                style={{ height: "100%", width: "100%" }}
@@ -142,11 +149,9 @@ export default function CustomerTracking() {
                {customerLocation && <Marker position={customerLocation} />}
                {workerLocation && <Marker position={workerLocation} icon={workerIcon} />}
                {customerLocation && workerLocation && (
-                 <Polyline 
-                   positions={[workerLocation, customerLocation]} 
-                   color="#8b5cf6" 
-                   weight={4} 
-                   dashArray="10, 10" 
+                 <Polyline
+                   positions={[workerLocation, customerLocation]}
+                   pathOptions={{ color: "#8b5cf6", weight: 4, dashArray: "10, 10" }}
                  />
                )}
              </MapContainer>
@@ -170,46 +175,71 @@ export default function CustomerTracking() {
            </motion.div>
         </div>
 
-        {/* Worker Info Card */}
+        {/* Worker Info Card or Searching State */}
         <div className="absolute inset-x-0 bottom-0 bg-white rounded-t-[2rem] shadow-[0_-10px_30px_rgba(0,0,0,0.1)] z-[1000] p-6 pb-8 transition-transform">
           <div className="w-12 h-1.5 bg-muted mx-auto rounded-full mb-6" />
           
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-purple-100 to-indigo-100 flex items-center justify-center shadow-inner overflow-hidden border-2 border-purple-100">
-               {workerInfo?.photo ? (
-                 <img src={workerInfo.photo} className="w-full h-full object-cover" />
-               ) : (
-                 <span className="text-xl font-bold text-primary">{workerInfo?.name?.charAt(0) || "W"}</span>
-               )}
+          {(booking.status === "unassigned" || booking.status === "requested" || !workerInfo) ? (
+            <div className="text-center space-y-6 py-4">
+               <div className="relative w-20 h-20 mx-auto">
+                   <div className="absolute inset-0 bg-indigo-500/20 rounded-full animate-ping" />
+                   <div className="relative w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center shadow-xl shadow-indigo-200">
+                      <Navigation className="w-10 h-10 text-white animate-pulse" />
+                   </div>
+               </div>
+               <div className="space-y-1">
+                  <h3 className="font-display font-bold text-xl text-slate-800">Finding New Worker...</h3>
+                  <p className="text-sm text-slate-500">Your previous worker unassigned, we're currently re-allocating a nearby pro for you.</p>
+               </div>
+               <Button 
+                variant="outline"
+                className="w-full h-12 text-destructive border-destructive/20 hover:bg-red-50 hover:text-red-700"
+                onClick={handleCancel}
+                disabled={isCancelling}
+               >
+                  Cancel Booking
+               </Button>
             </div>
-            <div className="flex-1">
-              <h3 className="font-bold text-lg text-foreground mb-1">{workerInfo?.name || "Professional"}</h3>
-              <div className="flex items-center gap-3 text-sm">
-                <span className="flex items-center gap-1 text-amber-500 font-medium">
-                  <Star className="w-4 h-4 fill-amber-500" /> {workerInfo?.rating || "4.8"}
-                </span>
-                <span className="text-muted-foreground">• {booking.service_categories?.name}</span>
+          ) : (
+            <>
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-purple-100 to-indigo-100 flex items-center justify-center shadow-inner overflow-hidden border-2 border-purple-100">
+                   {workerInfo?.photo ? (
+                     <img src={workerInfo.photo} className="w-full h-full object-cover" />
+                   ) : (
+                     <span className="text-xl font-bold text-primary">{workerInfo?.name?.charAt(0) || "W"}</span>
+                   )}
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-lg text-foreground mb-1">{workerInfo?.name || "Professional"}</h3>
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="flex items-center gap-1 text-amber-500 font-medium">
+                      <Star className="w-4 h-4 fill-amber-500" /> {workerInfo?.rating || "4.8"}
+                    </span>
+                    <span className="text-muted-foreground">• {booking.service_categories?.name}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div className="flex gap-3">
-             <Button 
-               className="flex-1 h-12 bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md font-semibold text-base gap-2"
-               onClick={() => window.location.href = `tel:${workerInfo?.phone}`}
-             >
-                <Phone className="w-5 h-5 fill-current" />
-                Call Worker
-             </Button>
-             <Button 
-               variant="outline"
-               className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20"
-               onClick={handleCancel}
-               disabled={isCancelling}
-             >
-                <XCircle className="w-6 h-6" />
-             </Button>
-          </div>
+              <div className="flex gap-3">
+                 <Button 
+                   className="flex-1 h-12 bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md font-semibold text-base gap-2"
+                   onClick={() => window.location.href = `tel:${workerInfo?.phone}`}
+                 >
+                    <Phone className="w-5 h-5 fill-current" />
+                    Call Worker
+                 </Button>
+                 <Button 
+                   variant="outline"
+                   className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20"
+                   onClick={handleCancel}
+                   disabled={isCancelling}
+                 >
+                    <XCircle className="w-6 h-6" />
+                 </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

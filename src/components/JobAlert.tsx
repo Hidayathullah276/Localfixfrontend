@@ -108,7 +108,7 @@ export function JobAlert({ booking, onAccept, onReject, onClose }: JobAlertProps
         >
           {/* Header with Pulsing Animation */}
           <div className="relative p-8 pb-6 text-center overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-600 to-indigo-700 opacity-90" />
+            <div className={`absolute inset-0 opacity-90 ${booking.is_emergency ? 'bg-gradient-to-br from-red-600 to-destructive' : 'bg-gradient-to-br from-purple-600 to-indigo-700'}`} />
             
             {/* Pulsing rings logic */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-white/10 rounded-full animate-ping opacity-20" />
@@ -116,22 +116,27 @@ export function JobAlert({ booking, onAccept, onReject, onClose }: JobAlertProps
 
             <div className="relative z-10">
               <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-md border border-white/30 shadow-lg animate-bounce">
-                <Bell className="w-8 h-8 text-white fill-white/20" />
+                {booking.is_emergency ? <Zap className="w-8 h-8 text-white fill-white" /> : <Bell className="w-8 h-8 text-white fill-white/20" />}
               </div>
-              <h2 className="text-2xl font-display font-bold text-white mb-1">New Job Request</h2>
+              <h2 className="text-2xl font-display font-bold text-white mb-1">
+                {booking.is_emergency ? 'EMERGENCY REQUEST' : 'New Job Request'}
+              </h2>
               <p className="text-white/70 text-sm">Accept within <span className="text-white font-bold">{timeLeft} seconds</span></p>
             </div>
           </div>
 
           <div className="p-8 pt-6 space-y-6">
             {/* Job Details Card */}
-            <div className="glass-card p-4 space-y-3 bg-muted/30 border-muted">
+            <div className={`glass-card p-4 space-y-3 border-muted ${booking.is_emergency ? 'bg-red-500/10' : 'bg-muted/30'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="p-2 bg-primary/10 rounded-lg">
-                    <Zap className="w-4 h-4 text-primary" />
+                    {booking.is_emergency ? <Zap className="w-4 h-4 text-red-600 animate-pulse" /> : <Zap className="w-4 h-4 text-primary" />}
                   </div>
-                  <span className="font-bold text-foreground">{(booking.service_categories as any)?.name}</span>
+                  <span className={`font-bold ${booking.is_emergency ? 'text-red-600' : 'text-foreground'}`}>
+                    {(booking.service_categories as any)?.name}
+                    {booking.is_emergency && <span className="ml-2 text-[10px] uppercase font-black tracking-tighter">⚡ Emergency</span>}
+                  </span>
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Offer</p>
@@ -172,7 +177,7 @@ export function JobAlert({ booking, onAccept, onReject, onClose }: JobAlertProps
               </button>
               <button
                 onClick={handleAccept}
-                className="h-14 flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 text-white font-bold text-sm shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all active:scale-95 relative overflow-hidden group"
+                className={`h-14 flex items-center justify-center gap-2 rounded-2xl text-white font-bold text-sm shadow-xl transition-all active:scale-95 relative overflow-hidden group ${booking.is_emergency ? 'bg-red-600 shadow-red-600/30 hover:bg-red-700' : 'bg-indigo-600 shadow-indigo-600/30 hover:bg-indigo-700'}`}
               >
                 {/* Glow effect */}
                 <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500" />

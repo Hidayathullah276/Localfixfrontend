@@ -1,9 +1,13 @@
+import React from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { SettingsProvider } from "@/contexts/SettingsContext";
+import { CartProvider } from "@/contexts/CartContext";
+import { EcommerceGate } from "@/components/EcommerceGate";
 import Auth from "./pages/Auth";
 import CustomerHome from "./pages/customer/CustomerHome";
 import Services from "./pages/customer/Services";
@@ -18,6 +22,7 @@ import CustomerHelpCenter from "./pages/customer/HelpCenter";
 import SupportForm from "./pages/shared/SupportForm";
 import UserTickets from "./pages/shared/UserTickets";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminOrders from "./pages/admin/AdminOrders";
 import AdminRoute from "./components/AdminRoute";
 import NotFound from "./pages/NotFound";
 import CustomerTracking from "./pages/customer/Tracking";
@@ -26,6 +31,11 @@ import MyReviews from "./pages/customer/profile/MyReviews";
 import PrivacySecurity from "./pages/customer/profile/PrivacySecurity";
 import HelpSupport from "./pages/customer/profile/HelpSupport";
 import Settings from "./pages/customer/profile/Settings";
+import Shop from "./pages/shop/Shop";
+import ShopCart from "./pages/shop/Cart";
+import ShopCheckout from "./pages/shop/Checkout";
+import ShopOrders from "./pages/shop/MyOrders";
+import ShopOrderDetail from "./pages/shop/OrderDetail";
 
 const queryClient = new QueryClient();
 
@@ -57,11 +67,13 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
+    <SettingsProvider>
+      <AuthProvider>
+        <CartProvider>
+          <BrowserRouter>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
           <Routes>
             <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
             <Route path="/" element={<ProtectedRoute><CustomerHome /></ProtectedRoute>} />
@@ -83,11 +95,19 @@ const App = () => (
             <Route path="/profile/help" element={<ProtectedRoute><HelpSupport /></ProtectedRoute>} />
             <Route path="/profile/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+            <Route path="/admin/orders" element={<AdminRoute><AdminOrders /></AdminRoute>} />
+            <Route path="/shop" element={<ProtectedRoute><EcommerceGate><Shop /></EcommerceGate></ProtectedRoute>} />
+            <Route path="/shop/cart" element={<ProtectedRoute><EcommerceGate><ShopCart /></EcommerceGate></ProtectedRoute>} />
+            <Route path="/shop/checkout" element={<ProtectedRoute><EcommerceGate><ShopCheckout /></EcommerceGate></ProtectedRoute>} />
+            <Route path="/shop/orders" element={<ProtectedRoute><EcommerceGate><ShopOrders /></EcommerceGate></ProtectedRoute>} />
+            <Route path="/shop/orders/:id" element={<ProtectedRoute><EcommerceGate><ShopOrderDetail /></EcommerceGate></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
+        </TooltipProvider>
+          </BrowserRouter>
+        </CartProvider>
+      </AuthProvider>
+    </SettingsProvider>
   </QueryClientProvider>
 );
 

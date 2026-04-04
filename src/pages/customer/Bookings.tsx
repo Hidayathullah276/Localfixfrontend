@@ -21,6 +21,7 @@ const statusColors: Record<string, string> = {
   accepted: "bg-blue-100 text-blue-700",
   worker_arriving: "bg-indigo-100 text-indigo-700",
   service_started: "bg-purple-100 text-purple-700",
+  price_negotiated: "bg-emerald-100 text-emerald-700 border border-emerald-200 animate-pulse",
   work_finished: "bg-amber-100 text-amber-700 border border-amber-200 animate-pulse",
   completed: "bg-emerald-100 text-emerald-700",
   cancelled: "bg-red-100 text-red-700",
@@ -176,7 +177,7 @@ export default function Bookings() {
                   <div className="flex flex-col gap-0.5 w-full">
                     <div className="flex items-center justify-between w-full">
                       <span className="text-xs font-bold text-foreground flex items-center gap-0.5">
-                        <IndianRupee className="w-3 h-3" /> {booking.total_price}
+                        <IndianRupee className="w-3 h-3" /> {(booking.total_price || 0).toFixed(2)}
                         {booking.status !== 'completed' && <span className="text-[9px] text-muted-foreground font-normal ml-1">(Est.)</span>}
                       </span>
                       <span className="text-[10px] text-muted-foreground flex items-center gap-1">
@@ -243,7 +244,7 @@ export default function Bookings() {
                       className="h-7 text-[10px] btn-primary-gradient"
                       onClick={() => setConfirmingBooking(booking)}
                     >
-                      Confirm & Pay
+                      Confirm Completion
                     </Button>
                   )}
                   {booking.status === 'completed' && !booking.rating && (
@@ -347,8 +348,8 @@ export default function Bookings() {
                   </div>
                 )}
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Platform Fee</span>
-                  <span>₹20.00</span>
+                  <span>{confirmingBooking.is_emergency ? 'Platform Fee (Waived)' : 'Platform Fee'}</span>
+                  <span className={confirmingBooking.is_emergency ? 'text-green-600 font-bold' : ''}>₹{(confirmingBooking.platform_fee || 0).toFixed(2)}</span>
                 </div>
                 <div className="border-t border-primary/20 pt-3 flex justify-between items-center">
                   <span className="text-lg font-display font-bold text-foreground">Final Total</span>
