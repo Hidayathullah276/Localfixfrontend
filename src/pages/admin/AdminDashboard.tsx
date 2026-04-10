@@ -242,10 +242,8 @@ export default function AdminDashboard() {
     try {
       await api.put("/settings", {
         shopEnabled: shopToggle,
-        ecommerce_enabled: shopToggle,
-        inspection_fee: tempFees.inspection,
-        hourly_platform_fee: tempFees.hourly,
-        platformFee: tempFees.hourly,
+        inspectionFee: Number(tempFees.inspection),
+        platformFee: Number(tempFees.hourly),
       });
       await refreshSettings();
       toast.success("Settings saved!", { description: "Platform settings updated successfully." });
@@ -259,7 +257,7 @@ export default function AdminDashboard() {
   const handleQuickShopToggle = async (val: boolean) => {
     setShopToggle(val);
     try {
-      await api.put("/settings/ecommerce-toggle", { ecommerce_enabled: val });
+      await api.put("/settings", { shopEnabled: val });
       await refreshSettings();
       toast.success(val ? "Shop is now LIVE 🛍️" : "Shop is now hidden", {
         description: val ? "Customers can browse and buy products." : "Shop section hidden from all users.",
