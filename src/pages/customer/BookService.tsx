@@ -8,11 +8,13 @@ import { ArrowLeft, MapPin, Clock, Zap, CheckCircle2, Navigation } from "lucide-
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useGeolocation } from "@/hooks/useGeolocation";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export default function BookService() {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { inspectionFee: dynamicInspectionFee, hourlyPlatformFee: dynamicHourlyFee } = useSettings();
   const [service, setService] = useState<any>(null);
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
@@ -23,6 +25,9 @@ export default function BookService() {
   const [bookingType, setBookingType] = useState<'hourly' | 'inspection'>('inspection');
   const { detectLocation, loading: locating, coords, address: detectedAddress } = useGeolocation();
   const [locationCoords, setLocationCoords] = useState<[number, number] | null>(null);
+
+  // Use dynamic platform fees from admin settings
+  const dynamicPlatformFee = bookingType === 'inspection' ? dynamicInspectionFee : dynamicHourlyFee;
 
   useEffect(() => {
     if (detectedAddress) {
@@ -53,16 +58,16 @@ export default function BookService() {
     detectLocation();
   };
 
-  // Model 1 & 2 Pricing Logic
-  const platformFee = isEmergency ? 50 : (bookingType === 'inspection' ? 50 : 20);
+  // Dynamic Pricing Logic (fees from admin settings)
+  const platformFee = isEmergency ? dynamicInspectionFee : dynamicPlatformFee;
   const emergencyFee = isEmergency ? 100 : 0;
   
   const visitFee = (bookingType === 'inspection') ? 0 : (service?.visit_fee || 150);
   const hourlyRate = service?.hourly_rate || 120;
   
-  // Amount customer pays UPFRONT to platform (Model 1: 50, Model 2: 150 (50+100))
+  // Amount customer pays UPFRONT to platform
   const upfrontPayable = isEmergency 
-    ? (bookingType === 'inspection' ? 150 : 50) 
+    ? (bookingType === 'inspection' ? dynamicInspectionFee + emergencyFee : dynamicInspectionFee) 
     : platformFee;
     
   const estimatedWorkCharge = bookingType === 'inspection' ? 0 : (hourlyRate * scheduledHours);

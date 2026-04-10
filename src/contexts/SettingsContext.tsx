@@ -37,9 +37,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettingsLoading(true);
     try {
       const data = await api.get("/settings");
-      setEcommerceEnabled(!!data.ecommerce_enabled);
-      if (data.inspection_fee !== undefined) setInspectionFee(data.inspection_fee);
-      if (data.hourly_platform_fee !== undefined) setHourlyPlatformFee(data.hourly_platform_fee);
+      setEcommerceEnabled(!!(data.shopEnabled ?? data.ecommerce_enabled));
+      if (data.inspectionFee !== undefined || data.inspection_fee !== undefined) {
+        setInspectionFee(data.inspectionFee ?? data.inspection_fee);
+      }
+      if (data.platformFee !== undefined || data.hourly_platform_fee !== undefined) {
+        setHourlyPlatformFee(data.platformFee ?? data.hourly_platform_fee);
+      }
     } catch {
       setEcommerceEnabled(false);
     } finally {

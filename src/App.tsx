@@ -23,6 +23,8 @@ import SupportForm from "./pages/shared/SupportForm";
 import UserTickets from "./pages/shared/UserTickets";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminOrders from "./pages/admin/AdminOrders";
+import AdminProducts from "./pages/admin/AdminProducts";
+import AdminSettings from "./pages/admin/AdminSettings";
 import AdminRoute from "./components/AdminRoute";
 import NotFound from "./pages/NotFound";
 import CustomerTracking from "./pages/customer/Tracking";
@@ -96,6 +98,8 @@ const App = () => (
             <Route path="/profile/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="/admin/orders" element={<AdminRoute><AdminOrders /></AdminRoute>} />
+            <Route path="/admin/products" element={<AdminRoute><AdminProducts /></AdminRoute>} />
+            <Route path="/admin/settings" element={<AdminRoute><AdminSettings /></AdminRoute>} />
             <Route path="/shop" element={<ProtectedRoute><EcommerceGate><Shop /></EcommerceGate></ProtectedRoute>} />
             <Route path="/shop/cart" element={<ProtectedRoute><EcommerceGate><ShopCart /></EcommerceGate></ProtectedRoute>} />
             <Route path="/shop/checkout" element={<ProtectedRoute><EcommerceGate><ShopCheckout /></EcommerceGate></ProtectedRoute>} />
